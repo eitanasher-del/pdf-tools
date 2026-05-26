@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.hypothesis/
+uploads/*
+!uploads/.gitkeep
+*.zip
+*.egg-info/
+.env
