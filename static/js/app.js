@@ -21,16 +21,16 @@ const TOOLS = {
     multiFile: true,
     submitLabel: "Merge PDFs",
   },
-  "split": {
-    title: "Split PDF",
-    description: "Split a PDF into multiple files — either one file per page, or by custom page ranges.",
-    endpoint: "/api/split",
+  "slice": {
+    title: "Slice PDF",
+    description: "Extract specific pages into one PDF, or split the document into multiple files.",
+    endpoint: "/api/slice",
     acceptedTypes: [".pdf"],
     acceptAttr: ".pdf",
     hint: "Accepts: PDF files",
     minFiles: 1,
     multiFile: false,
-    submitLabel: "Split PDF",
+    submitLabel: "Slice PDF",
   },
   "rotate": {
     title: "Rotate Pages",
@@ -42,17 +42,6 @@ const TOOLS = {
     minFiles: 1,
     multiFile: false,
     submitLabel: "Rotate & Save",
-  },
-  "extract": {
-    title: "Extract Pages",
-    description: "Pull out specific pages from a PDF into a new document.",
-    endpoint: "/api/extract",
-    acceptedTypes: [".pdf"],
-    acceptAttr: ".pdf",
-    hint: "Accepts: PDF files",
-    minFiles: 1,
-    multiFile: false,
-    submitLabel: "Extract Pages",
   },
   "compress": {
     title: "Compress PDF",
@@ -461,24 +450,43 @@ function renderOptions(toolName) {
       </div>`;
       break;
 
-    case "split":
+    case "slice":
       html = `<div class="options-card">
-        <p class="options-card-title">Split Options</p>
+        <p class="options-card-title">What do you want?</p>
         <div class="radio-group">
           <label class="radio-label">
-            <input type="radio" name="split-mode" value="pages" checked />
-            Every page — each page becomes its own PDF
+            <input type="radio" name="slice-mode" value="extract" checked />
+            <div>
+              <strong>Extract pages → one PDF</strong>
+              <div style="font-size:0.82rem;color:var(--color-text-muted)">e.g. pick pages 1-3, 5, 7 into a single file</div>
+            </div>
           </label>
           <label class="radio-label">
-            <input type="radio" name="split-mode" value="ranges" />
-            Custom ranges — specify which pages go into each file
+            <input type="radio" name="slice-mode" value="pages" />
+            <div>
+              <strong>Split every page → ZIP</strong>
+              <div style="font-size:0.82rem;color:var(--color-text-muted)">each page becomes its own PDF file</div>
+            </div>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="slice-mode" value="ranges" />
+            <div>
+              <strong>Split by ranges → ZIP</strong>
+              <div style="font-size:0.82rem;color:var(--color-text-muted)">divide into chunks, e.g. 1-3, 4-6, 7-10</div>
+            </div>
           </label>
         </div>
-        <div id="split-ranges-group" style="display:none;" class="form-group">
-          <label class="form-label" for="split-ranges">Page ranges</label>
-          <input type="text" id="split-ranges" class="form-input"
+        <div id="slice-page-spec-group" class="form-group" style="margin-top:4px;">
+          <label class="form-label" for="slice-page-spec">Pages to extract</label>
+          <input type="text" id="slice-page-spec" class="form-input"
+            placeholder="e.g. 1-3, 5, 7-9" autocomplete="off" />
+          <span class="form-help">Use commas and ranges, e.g. 1-3, 5, 7-9</span>
+        </div>
+        <div id="slice-ranges-group" class="form-group" style="display:none;margin-top:4px;">
+          <label class="form-label" for="slice-ranges">Page ranges</label>
+          <input type="text" id="slice-ranges" class="form-input"
             placeholder="e.g. 1-3, 4-6, 7-10" autocomplete="off" />
-          <span class="form-help">Separate ranges with commas. Each range becomes one PDF in the ZIP.</span>
+          <span class="form-help">Each range becomes one PDF in the ZIP.</span>
         </div>
       </div>`;
       break;
@@ -516,17 +524,6 @@ function renderOptions(toolName) {
       </div>`;
       break;
 
-    case "extract":
-      html = `<div class="options-card">
-        <p class="options-card-title">Pages to Extract</p>
-        <div class="form-group">
-          <label class="form-label" for="extract-pages">Page ranges</label>
-          <input type="text" id="extract-pages" class="form-input"
-            placeholder="e.g. 1-3, 5, 7-9" autocomplete="off" />
-          <span class="form-help">All specified pages will be combined into one new PDF.</span>
-        </div>
-      </div>`;
-      break;
 
     case "compress":
       html = `<div class="options-card">
@@ -698,12 +695,17 @@ function bindOptionEvents(toolName) {
     renderConvertExtra();
   }
 
-  if (toolName === "split") {
-    const radios = els.optionsPanel.querySelectorAll('input[name="split-mode"]');
-    const rangesGroup = $("split-ranges-group");
-    radios.forEach(r => r.addEventListener("change", () => {
-      rangesGroup.style.display = r.value === "ranges" && r.checked ? "flex" : "none";
-    }));
+  if (toolName === "slice") {
+    const radios      = els.optionsPanel.querySelectorAll('input[name="slice-mode"]');
+    const specGroup   = $("slice-page-spec-group");
+    const rangesGroup = $("slice-ranges-group");
+    function updateSliceUI() {
+      const val = els.optionsPanel.querySelector('input[name="slice-mode"]:checked')?.value;
+      specGroup.style.display   = val === "extract" ? "flex" : "none";
+      rangesGroup.style.display = val === "ranges"  ? "flex" : "none";
+    }
+    radios.forEach(r => r.addEventListener("change", updateSliceUI));
+    updateSliceUI();
   }
 
   if (toolName === "rotate") {
@@ -833,11 +835,15 @@ async function submitOperation() {
 function validateOptions() {
   const tool = state.activeTool;
 
-  if (tool === "split") {
-    const mode = document.querySelector('input[name="split-mode"]:checked');
-    if (mode && mode.value === "ranges") {
-      const ranges = ($("split-ranges") || {}).value || "";
-      if (!ranges.trim()) return "Please enter page ranges for splitting, e.g. '1-3, 4-6'.";
+  if (tool === "slice") {
+    const mode = document.querySelector('input[name="slice-mode"]:checked');
+    if (mode?.value === "extract") {
+      if (!($("slice-page-spec")?.value || "").trim())
+        return "Please enter the pages to extract, e.g. '1-3, 5'.";
+    }
+    if (mode?.value === "ranges") {
+      if (!($("slice-ranges")?.value || "").trim())
+        return "Please enter the page ranges, e.g. '1-3, 4-6'.";
     }
   }
 
@@ -849,22 +855,22 @@ function validateOptions() {
     }
   }
 
-  if (tool === "extract") {
-    const pages = ($("extract-pages") || {}).value || "";
-    if (!pages.trim()) return "Please enter the page ranges to extract, e.g. '1-3, 5'.";
-  }
-
   return null;
 }
 
 function appendOptions(formData) {
   const tool = state.activeTool;
 
-  if (tool === "split") {
-    const mode = document.querySelector('input[name="split-mode"]:checked');
-    formData.append("mode", mode ? mode.value : "pages");
-    const ranges = $("split-ranges");
-    if (ranges) formData.append("ranges", ranges.value);
+  if (tool === "slice") {
+    const mode = document.querySelector('input[name="slice-mode"]:checked');
+    const modeVal = mode ? mode.value : "extract";
+    formData.append("mode", modeVal);
+    if (modeVal === "extract") {
+      formData.append("page_spec", $("slice-page-spec")?.value || "");
+    }
+    if (modeVal === "ranges") {
+      formData.append("ranges", $("slice-ranges")?.value || "");
+    }
   }
 
   if (tool === "rotate") {
@@ -877,11 +883,6 @@ function appendOptions(formData) {
     } else {
       formData.append("page_spec", "all");
     }
-  }
-
-  if (tool === "extract") {
-    const pages = $("extract-pages");
-    if (pages) formData.append("page_spec", pages.value);
   }
 
   if (tool === "compress") {
@@ -928,9 +929,8 @@ function getDefaultFilename() {
   }
   const defaults = {
     "merge":        "merged.pdf",
-    "split":        "split_pages.zip",
+    "slice":        document.querySelector('input[name="slice-mode"]:checked')?.value === "extract" ? "sliced.pdf" : "sliced_pages.zip",
     "rotate":       "rotated.pdf",
-    "extract":      "extracted_pages.pdf",
     "compress":     "compressed.pdf",
     "merge-images": "merged.jpg",
   };

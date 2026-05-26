@@ -326,6 +326,56 @@ def api_images_to_pdf():
 
 
 # ---------------------------------------------------------------------------
+# Slice PDF route (replaces split + extract)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/slice", methods=["POST"])
+def api_slice():
+    files = request.files.getlist("files")
+    validate_pdf_files(files, min_count=1)
+
+    mode = request.form.get("mode", "extract").strip()
+    # mode: "extract" | "pages" | "ranges"
+    if mode not in ("extract", "pages", "ranges"):
+        raise ops.PDFOperationError("Invalid slice mode.")
+
+    page_spec = request.form.get("page_spec", "").strip()
+    ranges    = request.form.get("ranges", "").strip()
+
+    session_dir = make_session_dir()
+    try:
+        input_path = save_upload(files[0], session_dir, 0)
+
+        if mode == "extract":
+            if not page_spec:
+                raise ops.PDFOperationError(
+                    "Please enter the page range(s) to extract, e.g. '1-3, 5'."
+                )
+            output_path = os.path.join(session_dir, "sliced.pdf")
+            ops.extract_pages(input_path, output_path, page_spec)
+            cleanup_later(session_dir)
+            return send_file(output_path, mimetype="application/pdf",
+                             as_attachment=True, download_name="sliced.pdf")
+        else:
+            # "pages" or "ranges" → ZIP output
+            zip_path = ops.split_pdf(
+                input_path, session_dir,
+                mode="pages" if mode == "pages" else "ranges",
+                ranges=ranges if mode == "ranges" else None,
+            )
+            cleanup_later(session_dir)
+            return send_file(zip_path, mimetype="application/zip",
+                             as_attachment=True, download_name="sliced_pages.zip")
+
+    except ops.PDFOperationError:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
+    except Exception:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Universal Convert route
 # ---------------------------------------------------------------------------
 
