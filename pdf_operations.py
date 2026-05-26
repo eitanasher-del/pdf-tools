@@ -526,3 +526,104 @@ def merge_images(
 
     canvas.save(output_path, format="JPEG", quality=92, optimize=True)
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# 9. Convert Image → Image (any format to any format)
+# ---------------------------------------------------------------------------
+
+# PIL format identifiers keyed by file extension
+_PIL_FORMAT = {
+    "jpg": "JPEG", "jpeg": "JPEG",
+    "png": "PNG",
+    "bmp": "BMP",
+    "tiff": "TIFF", "tif": "TIFF",
+    "webp": "WEBP",
+    "gif": "GIF",
+}
+
+# File extension to use when saving (normalise jpeg→jpg)
+_SAVE_EXT = {
+    "jpg": "jpg", "jpeg": "jpg",
+    "png": "png",
+    "bmp": "bmp",
+    "tiff": "tiff", "tif": "tiff",
+    "webp": "webp",
+    "gif": "gif",
+}
+
+
+def convert_image(input_paths: list, output_dir: str, to_format: str) -> str:
+    """
+    Convert one or more image files to a different image format.
+
+    Args:
+        input_paths: List of source image paths.
+        output_dir:  Directory for output files.
+        to_format:   Target format extension, e.g. "png", "jpg", "webp".
+
+    Returns:
+        Path to single output file (if one input) or a ZIP archive (if many).
+    """
+    to_fmt = to_format.lower().strip()
+    pil_fmt = _PIL_FORMAT.get(to_fmt)
+    out_ext = _SAVE_EXT.get(to_fmt)
+
+    if not pil_fmt:
+        raise PDFOperationError(f"Unsupported output format: '{to_format}'.")
+    if not input_paths:
+        raise PDFOperationError("Please provide at least one image to convert.")
+
+    output_files = []
+    digits = len(str(len(input_paths)))
+
+    for idx, path in enumerate(input_paths):
+        try:
+            img = Image.open(path)
+        except Exception:
+            raise PDFOperationError(
+                f"Could not open '{os.path.basename(path)}'."
+            )
+
+        # Mode normalisation
+        if pil_fmt == "JPEG":
+            # JPEG does not support transparency or palette
+            if img.mode in ("RGBA", "LA", "P"):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                if "A" in img.mode:
+                    bg.paste(img, mask=img.split()[-1])
+                else:
+                    bg.paste(img)
+                img = bg
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+        elif pil_fmt == "GIF":
+            img = img.convert("P")
+        elif pil_fmt == "BMP":
+            if img.mode not in ("RGB", "RGBA", "L"):
+                img = img.convert("RGB")
+        else:
+            # PNG, TIFF, WebP — keep original mode where possible
+            pass
+
+        # Build output filename: strip old extension, add new one
+        stem = os.path.splitext(os.path.basename(path))[0]
+        if len(input_paths) > 1:
+            out_name = f"{str(idx + 1).zfill(digits)}_{stem}.{out_ext}"
+        else:
+            out_name = f"{stem}.{out_ext}"
+        out_path = os.path.join(output_dir, out_name)
+
+        save_kwargs = {}
+        if pil_fmt == "JPEG":
+            save_kwargs = {"quality": 92, "optimize": True}
+        img.save(out_path, format=pil_fmt, **save_kwargs)
+        output_files.append(out_path)
+
+    if len(output_files) == 1:
+        return output_files[0]
+
+    zip_path = os.path.join(output_dir, "converted.zip")
+    return _create_zip(output_files, zip_path)

@@ -65,16 +65,16 @@ const TOOLS = {
     multiFile: false,
     submitLabel: "Compress PDF",
   },
-  "pdf-to-images": {
-    title: "PDF → Images",
-    description: "Convert each page of a PDF into an image (JPG or PNG). You'll receive a ZIP archive.",
-    endpoint: "/api/pdf-to-images",
-    acceptedTypes: [".pdf"],
-    acceptAttr: ".pdf",
-    hint: "Accepts: PDF files",
+  "convert": {
+    title: "Convert",
+    description: "Convert any file to a different format — images to PDF, PDF to images, or any image format to another.",
+    endpoint: "/api/convert",
+    acceptedTypes: [".pdf"],        // updated dynamically when From changes
+    acceptAttr: ".pdf",             // updated dynamically
+    hint: "Select a format above, then drop your file(s) here",
     minFiles: 1,
-    multiFile: false,
-    submitLabel: "Convert to Images",
+    multiFile: true,                // depends on direction; enforced by route
+    submitLabel: "Convert",
   },
   "merge-images": {
     title: "Merge Images",
@@ -87,18 +87,33 @@ const TOOLS = {
     multiFile: true,
     submitLabel: "Merge Images",
   },
-  "images-to-pdf": {
-    title: "Images → PDF",
-    description: "Combine JPG, PNG, BMP or other image files into a single PDF document.",
-    endpoint: "/api/images-to-pdf",
-    acceptedTypes: [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".webp"],
-    acceptAttr: ".jpg,.jpeg,.png,.bmp,.gif,.tiff,.tif,.webp",
-    hint: "Accepts: JPG, PNG, BMP, GIF, TIFF  •  Drag to reorder",
-    minFiles: 1,
-    multiFile: true,
-    submitLabel: "Create PDF",
-  },
 };
+
+// ============================================================
+//  Convert Tool — Format Matrix
+// ============================================================
+
+const CONVERT_TARGETS = {
+  "pdf":  ["jpg", "png"],
+  "jpg":  ["png", "bmp", "tiff", "webp", "gif", "pdf"],
+  "png":  ["jpg", "bmp", "tiff", "webp", "gif", "pdf"],
+  "bmp":  ["jpg", "png", "tiff", "webp", "pdf"],
+  "tiff": ["jpg", "png", "bmp", "webp", "pdf"],
+  "webp": ["jpg", "png", "bmp", "tiff", "pdf"],
+  "gif":  ["jpg", "png", "bmp", "pdf"],
+};
+
+const FORMAT_LABELS = {
+  pdf:  "PDF Document",
+  jpg:  "JPG Image",
+  png:  "PNG Image",
+  bmp:  "BMP Image",
+  tiff: "TIFF Image",
+  webp: "WebP Image",
+  gif:  "GIF Image",
+};
+
+const IMAGE_ACCEPT = ".jpg,.jpeg,.png,.bmp,.gif,.tiff,.tif,.webp";
 
 // ============================================================
 //  Application State
@@ -552,6 +567,32 @@ function renderOptions(toolName) {
       </div>`;
       break;
 
+    case "convert": {
+      // Build "From" options (all formats)
+      const fromOpts = Object.keys(CONVERT_TARGETS)
+        .map(f => `<option value="${f}">${FORMAT_LABELS[f]}</option>`).join("");
+      // Default "To" options for PDF (first entry)
+      const defaultTargets = CONVERT_TARGETS["pdf"];
+      const toOpts = defaultTargets
+        .map(f => `<option value="${f}">${FORMAT_LABELS[f]}</option>`).join("");
+      html = `<div class="options-card">
+        <p class="options-card-title">Conversion</p>
+        <div class="convert-from-to">
+          <div class="form-group">
+            <label class="form-label" for="convert-from">From</label>
+            <select id="convert-from" class="form-select" style="max-width:100%">${fromOpts}</select>
+          </div>
+          <div class="convert-arrow">→</div>
+          <div class="form-group">
+            <label class="form-label" for="convert-to">To</label>
+            <select id="convert-to" class="form-select" style="max-width:100%">${toOpts}</select>
+          </div>
+        </div>
+        <div id="convert-extra-options"></div>
+      </div>`;
+      break;
+    }
+
     case "merge-images":
       html = `<div class="options-card">
         <p class="options-card-title">Layout</p>
@@ -589,6 +630,74 @@ function renderOptions(toolName) {
 }
 
 function bindOptionEvents(toolName) {
+  if (toolName === "convert") {
+    const fromSel = $("convert-from");
+    const toSel   = $("convert-to");
+
+    function updateConvertTo() {
+      const fromVal = fromSel.value;
+      const targets = CONVERT_TARGETS[fromVal] || [];
+      toSel.innerHTML = targets
+        .map(f => `<option value="${f}">${FORMAT_LABELS[f]}</option>`).join("");
+      // Update accepted file types on the hidden input
+      els.fileInput.accept = fromVal === "pdf" ? ".pdf" : IMAGE_ACCEPT;
+      TOOLS["convert"].acceptedTypes = fromVal === "pdf"
+        ? [".pdf"]
+        : IMAGE_ACCEPT.split(",");
+      // Clear files — old ones may be the wrong type
+      if (state.files.length > 0) {
+        state.files = [];
+        renderFileList();
+        updateSubmitButton();
+      }
+      renderConvertExtra();
+    }
+
+    function renderConvertExtra() {
+      const fromVal = fromSel.value;
+      const toVal   = toSel.value;
+      const extra   = $("convert-extra-options");
+      if (!extra) return;
+
+      if (fromVal === "pdf") {
+        extra.innerHTML = `<div style="margin-top:14px;">
+          <p class="options-card-title" style="margin-bottom:8px;">Resolution (DPI)</p>
+          <div class="dpi-presets">
+            <button class="dpi-preset-btn" data-dpi="72">72 — Screen</button>
+            <button class="dpi-preset-btn" data-dpi="96">96 — Web</button>
+            <button class="dpi-preset-btn active" data-dpi="150">150 — Standard ✓</button>
+            <button class="dpi-preset-btn" data-dpi="300">300 — Print</button>
+          </div>
+          <input type="hidden" id="convert-dpi" value="150" />
+        </div>`;
+        extra.querySelectorAll(".dpi-preset-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            extra.querySelectorAll(".dpi-preset-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            $("convert-dpi").value = btn.dataset.dpi;
+          });
+        });
+      } else if (toVal === "pdf") {
+        extra.innerHTML = `<div style="margin-top:14px;">
+          <p class="options-card-title" style="margin-bottom:8px;">Page Size</p>
+          <select id="convert-page-size" class="form-select">
+            <option value="auto">Auto — match each image's dimensions</option>
+            <option value="a4">A4 (210 × 297 mm)</option>
+            <option value="letter">Letter (8.5 × 11 in)</option>
+          </select>
+        </div>`;
+      } else {
+        extra.innerHTML = "";
+      }
+    }
+
+    fromSel.addEventListener("change", updateConvertTo);
+    toSel.addEventListener("change", renderConvertExtra);
+
+    // Initialise extra options for default selection
+    renderConvertExtra();
+  }
+
   if (toolName === "split") {
     const radios = els.optionsPanel.querySelectorAll('input[name="split-mode"]');
     const rangesGroup = $("split-ranges-group");
@@ -787,27 +896,43 @@ function appendOptions(formData) {
     if (dpi) formData.append("dpi", dpi.value);
   }
 
+  if (tool === "convert") {
+    const fromSel = $("convert-from");
+    const toSel   = $("convert-to");
+    if (fromSel) formData.append("from_format", fromSel.value);
+    if (toSel)   formData.append("to_format",   toSel.value);
+    const dpi = $("convert-dpi");
+    if (dpi) formData.append("dpi", dpi.value);
+    const ps = $("convert-page-size");
+    if (ps) formData.append("page_size", ps.value);
+  }
+
   if (tool === "merge-images") {
     const layout = document.querySelector('input[name="merge-layout"]:checked');
     formData.append("layout", layout ? layout.value : "vertical");
   }
 
-  if (tool === "images-to-pdf") {
-    const ps = $("page-size");
-    if (ps) formData.append("page_size", ps.value);
-  }
+
 }
 
 function getDefaultFilename() {
+  if (state.activeTool === "convert") {
+    const toSel = $("convert-to");
+    const toVal = toSel ? toSel.value : "jpg";
+    const fromSel = $("convert-from");
+    const fromVal = fromSel ? fromSel.value : "pdf";
+    if (fromVal === "pdf" || (state.files.length > 1 && toVal !== "pdf")) {
+      return "converted.zip";
+    }
+    return `converted.${toVal}`;
+  }
   const defaults = {
-    "merge": "merged.pdf",
-    "split": "split_pages.zip",
-    "rotate": "rotated.pdf",
-    "extract": "extracted_pages.pdf",
-    "compress": "compressed.pdf",
-    "pdf-to-images": "pdf_images.zip",
-    "merge-images":  "merged.jpg",
-    "images-to-pdf": "combined.pdf",
+    "merge":        "merged.pdf",
+    "split":        "split_pages.zip",
+    "rotate":       "rotated.pdf",
+    "extract":      "extracted_pages.pdf",
+    "compress":     "compressed.pdf",
+    "merge-images": "merged.jpg",
   };
   return defaults[state.activeTool] || "result.pdf";
 }

@@ -326,6 +326,82 @@ def api_images_to_pdf():
 
 
 # ---------------------------------------------------------------------------
+# Universal Convert route
+# ---------------------------------------------------------------------------
+
+IMAGE_FORMATS = {"jpg", "jpeg", "png", "bmp", "tiff", "tif", "webp", "gif"}
+IMAGE_ACCEPT_EXTS = ".jpg,.jpeg,.png,.bmp,.gif,.tiff,.tif,.webp"
+
+
+@app.route("/api/convert", methods=["POST"])
+def api_convert():
+    from_format = request.form.get("from_format", "").lower().strip()
+    to_format   = request.form.get("to_format",   "").lower().strip()
+
+    if not from_format or not to_format:
+        raise ops.PDFOperationError("Please select both a source and target format.")
+    if from_format == to_format:
+        raise ops.PDFOperationError("Source and target format must be different.")
+
+    files = request.files.getlist("files")
+
+    session_dir = make_session_dir()
+    try:
+        if from_format == "pdf":
+            # PDF → image format (JPG or PNG)
+            validate_pdf_files(files, min_count=1)
+            if to_format not in ("jpg", "jpeg", "png"):
+                raise ops.PDFOperationError("PDF can only be converted to JPG or PNG.")
+            try:
+                dpi = int(request.form.get("dpi", 150))
+            except ValueError:
+                dpi = 150
+            dpi = max(72, min(300, dpi))
+            input_path = save_upload(files[0], session_dir, 0)
+            zip_path = ops.pdf_to_images(input_path, session_dir, to_format, dpi)
+            cleanup_later(session_dir)
+            return send_file(zip_path, mimetype="application/zip",
+                             as_attachment=True, download_name="converted.zip")
+
+        elif to_format == "pdf":
+            # Image(s) → PDF
+            validate_image_files(files, min_count=1)
+            page_size = request.form.get("page_size", "auto").strip().lower()
+            if page_size not in ("auto", "a4", "letter"):
+                page_size = "auto"
+            image_paths = [save_upload(f, session_dir, i) for i, f in enumerate(files)]
+            output_path = os.path.join(session_dir, "converted.pdf")
+            ops.images_to_pdf(image_paths, output_path, page_size)
+            cleanup_later(session_dir)
+            return send_file(output_path, mimetype="application/pdf",
+                             as_attachment=True, download_name="converted.pdf")
+
+        elif from_format in IMAGE_FORMATS and to_format in IMAGE_FORMATS:
+            # Image → different image format
+            validate_image_files(files, min_count=1)
+            image_paths = [save_upload(f, session_dir, i) for i, f in enumerate(files)]
+            result_path = ops.convert_image(image_paths, session_dir, to_format)
+            is_zip = result_path.endswith(".zip")
+            mime = "application/zip" if is_zip else f"image/{to_format}"
+            ext  = "zip" if is_zip else to_format
+            cleanup_later(session_dir)
+            return send_file(result_path, mimetype=mime,
+                             as_attachment=True, download_name=f"converted.{ext}")
+
+        else:
+            raise ops.PDFOperationError(
+                f"Unsupported conversion: {from_format} → {to_format}."
+            )
+
+    except ops.PDFOperationError:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
+    except Exception:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Merge Images route
 # ---------------------------------------------------------------------------
 
