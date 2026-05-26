@@ -453,3 +453,76 @@ def images_to_pdf(
     doc.save(output_path, garbage=4, deflate=True)
     doc.close()
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# 8. Merge Images → single JPEG
+# ---------------------------------------------------------------------------
+
+def merge_images(
+    image_paths: list,
+    output_path: str,
+    layout: str = "vertical",
+) -> str:
+    """
+    Stitch multiple images into a single JPEG.
+
+    Args:
+        image_paths: Ordered list of image file paths.
+        output_path: Destination JPEG path.
+        layout:      "vertical" (stack top-to-bottom, same width)
+                     | "horizontal" (side by side, same height).
+
+    Returns:
+        output_path
+    """
+    if len(image_paths) < 2:
+        raise PDFOperationError("Please provide at least 2 images to merge.")
+    if layout not in ("vertical", "horizontal"):
+        raise PDFOperationError("Layout must be 'vertical' or 'horizontal'.")
+
+    images = []
+    for path in image_paths:
+        try:
+            img = Image.open(path).convert("RGB")
+            images.append(img)
+        except Exception:
+            raise PDFOperationError(
+                f"Could not open '{os.path.basename(path)}'. "
+                "Supported formats: JPG, PNG, BMP, GIF, TIFF."
+            )
+
+    if layout == "vertical":
+        # Scale all images to the width of the widest one
+        target_w = max(img.width for img in images)
+        resized = []
+        for img in images:
+            if img.width != target_w:
+                scale = target_w / img.width
+                img = img.resize((target_w, int(img.height * scale)), Image.LANCZOS)
+            resized.append(img)
+        total_h = sum(img.height for img in resized)
+        canvas = Image.new("RGB", (target_w, total_h), (255, 255, 255))
+        y = 0
+        for img in resized:
+            canvas.paste(img, (0, y))
+            y += img.height
+
+    else:  # horizontal
+        # Scale all images to the height of the tallest one
+        target_h = max(img.height for img in images)
+        resized = []
+        for img in images:
+            if img.height != target_h:
+                scale = target_h / img.height
+                img = img.resize((int(img.width * scale), target_h), Image.LANCZOS)
+            resized.append(img)
+        total_w = sum(img.width for img in resized)
+        canvas = Image.new("RGB", (total_w, target_h), (255, 255, 255))
+        x = 0
+        for img in resized:
+            canvas.paste(img, (x, 0))
+            x += img.width
+
+    canvas.save(output_path, format="JPEG", quality=92, optimize=True)
+    return output_path

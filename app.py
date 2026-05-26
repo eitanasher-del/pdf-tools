@@ -326,6 +326,35 @@ def api_images_to_pdf():
 
 
 # ---------------------------------------------------------------------------
+# Merge Images route
+# ---------------------------------------------------------------------------
+
+@app.route("/api/merge-images", methods=["POST"])
+def api_merge_images():
+    files = request.files.getlist("files")
+    validate_image_files(files, min_count=2)
+
+    layout = request.form.get("layout", "vertical").strip().lower()
+    if layout not in ("vertical", "horizontal"):
+        raise ops.PDFOperationError("Layout must be 'vertical' or 'horizontal'.")
+
+    session_dir = make_session_dir()
+    try:
+        image_paths = [save_upload(f, session_dir, i) for i, f in enumerate(files)]
+        output_path = os.path.join(session_dir, "merged.jpg")
+        ops.merge_images(image_paths, output_path, layout)
+        cleanup_later(session_dir)
+        return send_file(output_path, mimetype="image/jpeg",
+                         as_attachment=True, download_name="merged.jpg")
+    except ops.PDFOperationError:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
+    except Exception:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

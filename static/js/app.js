@@ -76,6 +76,17 @@ const TOOLS = {
     multiFile: false,
     submitLabel: "Convert to Images",
   },
+  "merge-images": {
+    title: "Merge Images",
+    description: "Stitch multiple images into one single JPEG — stack them vertically (top to bottom) or horizontally (side by side).",
+    endpoint: "/api/merge-images",
+    acceptedTypes: [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".webp"],
+    acceptAttr: ".jpg,.jpeg,.png,.bmp,.gif,.tiff,.tif,.webp",
+    hint: "Accepts: JPG, PNG, BMP, GIF, TIFF  •  Drag to reorder",
+    minFiles: 2,
+    multiFile: true,
+    submitLabel: "Merge Images",
+  },
   "images-to-pdf": {
     title: "Images → PDF",
     description: "Combine JPG, PNG, BMP or other image files into a single PDF document.",
@@ -541,6 +552,22 @@ function renderOptions(toolName) {
       </div>`;
       break;
 
+    case "merge-images":
+      html = `<div class="options-card">
+        <p class="options-card-title">Layout</p>
+        <div class="segment-control">
+          <input type="radio" name="merge-layout" id="layout-vertical" value="vertical" checked />
+          <label for="layout-vertical">⬇&nbsp; Vertical</label>
+          <input type="radio" name="merge-layout" id="layout-horizontal" value="horizontal" />
+          <label for="layout-horizontal">➡&nbsp; Horizontal</label>
+        </div>
+        <p style="font-size:0.84rem;color:var(--color-text-muted);margin-top:12px;line-height:1.55;">
+          <strong>Vertical</strong> — stacks images top to bottom, all scaled to the same width.<br>
+          <strong>Horizontal</strong> — places images side by side, all scaled to the same height.
+        </p>
+      </div>`;
+      break;
+
     case "images-to-pdf":
       html = `<div class="options-card">
         <p class="options-card-title">Page Size</p>
@@ -760,6 +787,11 @@ function appendOptions(formData) {
     if (dpi) formData.append("dpi", dpi.value);
   }
 
+  if (tool === "merge-images") {
+    const layout = document.querySelector('input[name="merge-layout"]:checked');
+    formData.append("layout", layout ? layout.value : "vertical");
+  }
+
   if (tool === "images-to-pdf") {
     const ps = $("page-size");
     if (ps) formData.append("page_size", ps.value);
@@ -774,6 +806,7 @@ function getDefaultFilename() {
     "extract": "extracted_pages.pdf",
     "compress": "compressed.pdf",
     "pdf-to-images": "pdf_images.zip",
+    "merge-images":  "merged.jpg",
     "images-to-pdf": "combined.pdf",
   };
   return defaults[state.activeTool] || "result.pdf";
