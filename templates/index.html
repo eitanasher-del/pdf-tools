@@ -162,6 +162,19 @@
     <!-- Options panel -->
     <div id="options-panel"></div>
 
+    <!-- Output filename -->
+    <div id="filename-row" hidden>
+      <div class="filename-group">
+        <label class="form-label" for="output-filename">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px;margin-right:5px;">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14,2 14,8 20,8"/>
+          </svg>Save as
+        </label>
+        <input type="text" id="output-filename" class="form-input" placeholder="output filename" autocomplete="off" />
+      </div>
+    </div>
+
     <!-- Action button -->
     <div id="action-row" hidden>
       <button type="button" id="submit-btn" class="btn btn-primary btn-large">

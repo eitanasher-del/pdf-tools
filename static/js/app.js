@@ -146,6 +146,8 @@ const els = {
   downloadLink:   $("download-link"),
   processAnotherBtn: $("process-another-btn"),
   toastContainer: $("toast-container"),
+  filenameRow:    $("filename-row"),
+  filenameInput:  $("output-filename"),
 };
 
 // ============================================================
@@ -200,6 +202,7 @@ function setProcessingState(on) {
     els.dropZoneProc.hidden = false;
     els.fileListCont.hidden = true;
     els.actionRow.hidden = true;
+    els.filenameRow.hidden = true;
     els.optionsPanel.style.opacity = "0.4";
     els.optionsPanel.style.pointerEvents = "none";
   } else {
@@ -689,7 +692,7 @@ function bindOptionEvents(toolName) {
     }
 
     fromSel.addEventListener("change", updateConvertTo);
-    toSel.addEventListener("change", renderConvertExtra);
+    toSel.addEventListener("change", () => { renderConvertExtra(); updateFilenameInput(); });
 
     // Initialise extra options for default selection
     renderConvertExtra();
@@ -704,7 +707,7 @@ function bindOptionEvents(toolName) {
       specGroup.style.display   = val === "extract" ? "flex" : "none";
       rangesGroup.style.display = val === "ranges"  ? "flex" : "none";
     }
-    radios.forEach(r => r.addEventListener("change", updateSliceUI));
+    radios.forEach(r => r.addEventListener("change", () => { updateSliceUI(); updateFilenameInput(); }));
     updateSliceUI();
   }
 
@@ -736,6 +739,48 @@ function bindOptionEvents(toolName) {
 }
 
 // ============================================================
+//  Output Filename
+// ============================================================
+
+function generateDefaultFilename() {
+  const tool = state.activeTool;
+  if (!state.files.length) return "";
+  const stem = state.files[0].name.replace(/\.[^/.]+$/, "");
+
+  switch (tool) {
+    case "merge":
+      return `${stem}-merged.pdf`;
+    case "slice": {
+      const mode = document.querySelector('input[name="slice-mode"]:checked')?.value || "extract";
+      return mode === "extract" ? `${stem}-extracted.pdf` : `${stem}-split.zip`;
+    }
+    case "rotate":
+      return `${stem}-rotated.pdf`;
+    case "compress":
+      return `${stem}-compressed.pdf`;
+    case "convert": {
+      const from = $("convert-from")?.value || "pdf";
+      const to   = $("convert-to")?.value   || "jpg";
+      if (from === "pdf") return `${stem}-converted.zip`;
+      if (to === "pdf")   return `${stem}.pdf`;
+      return state.files.length > 1 ? `${stem}-converted.zip` : `${stem}.${to}`;
+    }
+    case "merge-images":
+      return `${stem}-merged.jpg`;
+    default:
+      return `${stem}-output.pdf`;
+  }
+}
+
+function updateFilenameInput() {
+  const enough = state.files.length >= TOOLS[state.activeTool].minFiles;
+  els.filenameRow.hidden = !enough || state.processing;
+  if (enough) {
+    els.filenameInput.value = generateDefaultFilename();
+  }
+}
+
+// ============================================================
 //  Submit Button
 // ============================================================
 
@@ -745,6 +790,7 @@ function updateSubmitButton() {
   els.actionRow.hidden = !enough || state.processing;
   els.submitBtn.disabled = !enough || state.processing;
   els.submitBtnText.textContent = tool.submitLabel;
+  updateFilenameInput();
 }
 
 els.submitBtn.addEventListener("click", submitOperation);
@@ -795,10 +841,9 @@ async function submitOperation() {
       throw new Error(errMsg);
     }
 
-    // Get filename from Content-Disposition header
-    const cd = response.headers.get("Content-Disposition") || "";
-    const match = cd.match(/filename[^;=\n]*=["']?([^"';\n]+)/);
-    const filename = match ? match[1].trim() : getDefaultFilename();
+    // Use the user's chosen filename (or the auto-generated default)
+    const inputVal = (els.filenameInput?.value || "").trim();
+    const filename = inputVal || getDefaultFilename();
 
     // Download the blob
     const blob = await response.blob();
@@ -952,6 +997,8 @@ function hideResult() {
 els.processAnotherBtn.addEventListener("click", () => {
   hideResult();
   state.files = [];
+  if (els.filenameInput) els.filenameInput.value = "";
+  els.filenameRow.hidden = true;
   renderFileList();
   resetDropZone();
   updateSubmitButton();

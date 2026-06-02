@@ -763,6 +763,33 @@ input[type="range"] {
 .link-btn.danger { color: var(--color-danger); }
 .link-btn.danger:hover { color: #c53030; }
 
+/* ---- Filename Row ----------------------------------------- */
+#filename-row {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  padding: 14px 18px;
+}
+
+.filename-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.filename-group .form-label {
+  white-space: nowrap;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+}
+
+.filename-group .form-input {
+  flex: 1;
+  font-family: monospace;
+  font-size: 0.88rem;
+}
+
 /* ---- Result Panel ----------------------------------------- */
 #result-panel {
   animation: slideUp 0.3s ease;
